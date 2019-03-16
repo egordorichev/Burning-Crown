@@ -106,7 +106,7 @@ exports.commands =  {
         let it = info.items[i]
 
         if (it > 0) {
-  				array.push(it == 1 ? i : `${i} x${it} - ${items[i].description}`)
+  				array.push((it == 1 ? i : `${i} x${it}`) + ` - ${items[i].description}`)
         }
 			})
 
@@ -419,7 +419,7 @@ exports.commands =  {
     description : "Ends the battle",
     battle : true,
     run : (args, message) => {
-      if (!checkTurn(message)) {
+      if (!checkBattle(message)) {
         return
       }
 
@@ -505,6 +505,7 @@ function checkDead(info, enemy, message) {
     enemy.items = []
     enemy.state = "dead"
     enemy.hp = 0
+		info.kills += 1
 
 		let coins = Math.round(enemy.coins / 2)
 		enemy.coins = 0
@@ -519,6 +520,8 @@ function checkDead(info, enemy, message) {
       message.member.addRole(globals.crown).catch(console.error)
       message.channel.send(`<@${info.id}> is now the ${globals.crownEmoji} owner! :tada:`)
     }
+
+		saveDb()
   }
 }
 
