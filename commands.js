@@ -1,4 +1,5 @@
 const globals = require("./globals.js")
+const items = require("./items.js").items
 
 exports.commands =  {
 	eval : {
@@ -75,7 +76,7 @@ exports.commands =  {
 		description : "Halp",
 		run : (args, message) => {
 			if (args.length == 1) {
-				let command = commands[args[0]]
+				let command = exports.commands[args[0]]
 
 				if (command == undefined) {
 					message.channel.send("Unknown command")
@@ -86,7 +87,7 @@ exports.commands =  {
 			} else {
 				let array = []
 
-				Object.keys(commands).forEach((c) => array.push(showHelp(c, commands[c])))
+				Object.keys(exports.commands).forEach((c) => array.push(showHelp(c, exports.commands[c])))
 				message.channel.send(array.join("\n"))
 			}
 		}
@@ -101,11 +102,13 @@ exports.commands =  {
       let name = who == undefined ? message.author : who
 			let array = [ `${name} has ${info.coins} ${globals.coin}, ${info.hp} :hearts:, ${info.kills} :skull:` ]
 
-			if (info.items != undefined) {
-				info.items.forEach((i) => {
-					array.push(i.count == 1 ? i.name : `${i.name} x${i.count}`)
-				})
-			}
+			Object.keys(info.items).forEach((i) => {
+        let it = info.items[i]
+
+        if (it > 0) {
+  				array.push(it == 1 ? i : `${i} x${it} - ${items[i].description}`)
+        }
+			})
 
       let c = message.guild.members.get(info.id)
 
@@ -170,6 +173,8 @@ exports.commands =  {
 			info.opponent = who.id
 			who.state = "battle"
 			info.state = "battle"
+      who.turn = false
+      info.turn = true
 
 			globals.saveDb()
 		}
@@ -181,7 +186,7 @@ exports.commands =  {
 		battle : true,
 		run : (args, message) => {
 			if (args.length == 1) {
-				let command = commands[args[0]]
+				let command = exports.commands[args[0]]
 
 				if (command == undefined) {
 					message.channel.send("Unknown command")
@@ -197,9 +202,9 @@ exports.commands =  {
 			} else {
 				let array = []
 
-				Object.keys(commands).forEach((c) => {
-					if (commands[c].battle) {
-						array.push(showHelp(c, commands[c]))
+				Object.keys(exports.commands).forEach((c) => {
+					if (exports.commands[c].battle) {
+						array.push(showHelp(c, exports.commands[c]))
 					}
 				})
 
@@ -213,41 +218,15 @@ exports.commands =  {
 		description : "Attacks your opponent",
 		battle : true,
 		run : (args, message) => {
-			if (!checkBattle(message)) {
+			if (!checkTurn(message)) {
 				return
 			}
 
 			let [info, enemy] = getBattleInfo(message)
 
 			let damage = Math.floor(Math.random() * 5 + 5)
-			enemy.hp -= damage
-
-			if (enemy.hp <= 0) {
-				enemy.hp = enemy.max
-				enemy.state = "idle"
-				info.state = "idle"
-				enemy.items = []
-
-				let coins = Math.round(enemy.coins / 2)
-				enemy.coins = 0
-        info.kills += 1
-				info.coins += coins
-
-        let msg = `<@${info.id}> hits <@${enemy.id}> for ${damage} :hearts:! :crossed_swords:\nRest in peace, <@${enemy.id}>, we will never forget you! :skull:\nYou got ${coins} ${globals.coin}!`
-				let c = message.guild.members.get(enemy.id)
-
-				if (c.roles.has(globals.crown.id)) {
-					c.removeRole(globals.crown)
-					message.member.addRole(globals.crown).catch(console.error)
-
-          msg += `\n\n<@${info.id}> is now the ${globals.crownEmoji} owner! :tada:`
-				}
-
-				message.channel.send(mst)
-			} else {
-				message.channel.send(`<@${info.id}> hits <@${enemy.id}> for ${damage} :hearts:! :crossed_swords:`)
-			}
-
+      hit(enemy, info, damage, message)
+      takeTurn(message)
 			globals.saveDb()
 		}
 	},
@@ -263,13 +242,7 @@ exports.commands =  {
 			}
 
 			let info = checkCreate(who.user)
-			info.hp = info.max
-			info.coins = 0
-			info.items = []
-			info.state = "idle"
-
-			message.member.removeRole(globals.crown)
-			message.channel.send(`<@${info.id}> was killed by ~~dark magic~~ 1s and 0s :eyes:`)
+      hit(info, checkCreate(message.author), info.max, message)
 		}
 	},
 
@@ -306,7 +279,136 @@ exports.commands =  {
 
 			globals.saveDb()
 		}
-	}
+	},
+
+  shop : {
+    access : "all",
+    description : "Shop for items",
+    run : (args, message) => {
+      let info = checkCreate(message.author)
+
+      if (info.state == "battle") {
+        message.channel.send(`<@${info.id}>, sorry, but we can't trade, while you are fighting!`)
+        return
+      }
+
+      let array = [ "Today we offer, **JUST FOR YOU**\n" ]
+
+      Object.keys(items).forEach((i) => {
+        let it = items[i]
+        array.push(`+ **${i}** - ${it.description}, ${it.cost} ${globals.coin}`)
+      })
+
+      array.push("\n**GET OUT OF HERE** _or buy these items at lowest prices ever possible!_\nUse `!buy [item name] (count)` to buy things")
+      message.channel.send(array.join("\n"))
+    }
+  },
+
+  buy : {
+    access : "all",
+    description : "Buys [item] (count) from the shop `!shop`",
+    run : (args, message) => {
+      if (args.length == 0) {
+        message.channel.send("`!buy` [item] (count)")
+        return
+      }
+
+      let name = args[0]
+      let count = 1
+
+      if (args.length > 1) {
+        count = parseInt(args[1])
+
+        if (count == undefined || count < 1) {
+          message.channel.send(`Invalid item count ${args[1]}`)
+          return
+        }
+      }
+
+      let item = items[name]
+
+      if (item == undefined) {
+        message.channel.send(`Unknown item ${name}! Use \`!shop\` for the item list`)
+        return
+      }
+
+      let cost = item.cost * count
+      let info = checkCreate(message.author)
+
+      if (info.coins < cost) {
+        message.channel.send(`<@${info.id}>, you have ${info.coins} ${globals.coin}, but thats not enough to buy x${count} ${name}, you need ${cost} ${globals.coin}! :(`)
+        return
+      }
+
+      message.channel.send(`<@${info.id}> you bought x${count} ${name} for ${cost} ${globals.coin}! Thanks you :money_mouth:`)
+      info.coins -= cost
+
+      if (info.items[name] != undefined) {
+        info.items[name] += count
+      } else {
+        info.items[name] = count
+      }
+
+      globals.saveDb()
+    }
+  },
+
+  use : {
+    access : "all",
+    description : "Use [item] in battle",
+    battle : true,
+    run : (args, message) => {
+      if (!checkTurn(message)) {
+        return
+      }
+
+      if (args.length != 1) {
+        message.channel.send("`!use` [item]")
+        return
+      }
+
+      let name = args[0]
+      let item = items[name]
+
+      if (item == undefined) {
+        message.channel.send(`Unknown item ${name}`)
+        return
+      }
+
+      let [info, enemy] = getBattleInfo(message)
+
+      if (info.items[name] == undefined || info.items[name] == 0) {
+        message.channel.send(`${message.author}, you don't have any ${name} in your inventory :x`)
+        return
+      }
+
+      info.items[name] -= 1
+
+      message.channel.send(`<@${info.id}> uses ${name}!`)
+
+      item.use(info, enemy, message)
+      takeTurn(message)
+      globals.saveDb()
+    }
+  },
+
+  escape : {
+    access : "all",
+    description : "Ends the battle",
+    battle : true,
+    run : (args, message) => {
+      if (!checkTurn(message)) {
+        return
+      }
+
+      let [info, enemy] = getBattleInfo(message)
+
+      info.state = "idle"
+      enemy.state = "idle"
+
+      message.channel.send(`<@${enemy.id}>, ${message.author} escaped the battle`)
+    }
+  }
 }
 
 function getBattleInfo(message) {
@@ -320,11 +422,93 @@ function checkBattle(message) {
 	let info = checkCreate(message.author)
 
 	if (info.state != "battle") {
-		message.channel.send("You are currently not in a battle! Use `!fight [who]` to start a battle! :skull:")
+		message.channel.send(`${message.author}, you are currently not in a battle! Use \`!fight [who]\` to start a battle! :skull:`)
 		return false
 	}
 
 	return true
+}
+
+function checkTurn(message) {
+  if (!checkBattle(message)) {
+    return false
+  }
+
+  let info = checkCreate(message.author)
+
+	if (!info.turn) {
+		message.channel.send(`${message.author}, it's your opponent turn right now, please wait a bit!`)
+		return false
+	}
+
+	return true
+}
+
+function takeTurn(message) {
+  let [info, enemy] = getBattleInfo(message)
+
+  info.turn = !info.turn
+  enemy.turn = !enemy.turn
+
+  checkDead(info, enemy, message)
+  checkDead(enemy, info, message)
+
+  if (info.state == "dead" && enemy.state == "dead") {
+    message.channel.send(`You both are dead, battle is over!`)
+
+    info.hp = info.max
+    enemy.state = enemy.max
+    info.state = "idle"
+    enemy.state = "idle"
+    return
+  } else if (info.state == "dead" || enemy.state == "dead") {
+    message.channel.send(`The battle is over!`)
+
+    if (info.state == "dead") {
+      info.hp = info.max
+    } else {
+      enemy.state = enemy.max
+    }
+
+    info.state = "idle"
+    enemy.state = "idle"
+    return
+  }
+
+  message.channel.send(`<@${info.turn ? info.id : enemy.id}>, it's your turn now!`)
+}
+
+function checkDead(info, enemy, message) {
+  if (info.state != "dead" && enemy.state == "dead") {
+    enemy.items = []
+    enemy.state = "dead"
+    enemy.hp = 0
+
+		let coins = Math.round(enemy.coins / 2)
+		enemy.coins = 0
+		info.coins += coins
+
+    message.channel.send(`Rest in peace, <@${enemy.id}>, we will never forget you! :skull:\n<@${info.id}> got ${coins} ${globals.coin}!`)
+
+    let c = message.guild.members.get(enemy.id)
+
+    if (c.roles.has(globals.crown.id)) {
+      c.removeRole(globals.crown)
+      message.member.addRole(globals.crown).catch(console.error)
+      message.channel.send(`<@${info.id}> is now the ${globals.crownEmoji} owner! :tada:`)
+    }
+  }
+}
+
+function hit(enemy, info, damage, message) {
+  enemy.hp -= damage
+
+  if (enemy.hp <= 0) {
+    enemy.state = "dead"
+    enemy.items = {}
+  }
+
+  message.channel.send(`<@${info.id}> hits <@${enemy.id}> for ${damage} :hearts:! :crossed_swords:`)
 }
 
 function checkCreate(author, i) {
@@ -333,13 +517,13 @@ function checkCreate(author, i) {
 	if (globals.base[id] == undefined) {
 		globals.base[id] = {
 			coins : 0,
-			hp : 50,
-			max : 50,
+			hp : 20,
+			max : 20,
 			id : id,
 			cnt : 0,
       kills : 0,
 			name : `${author.username}#${author.discriminator}`,
-			items : [],
+			items : {},
 			state : "idle"
 		}
 
@@ -348,6 +532,8 @@ function checkCreate(author, i) {
 
 	return globals.base[id]
 }
+
+globals.checkCreate = checkCreate
 
 function showHelp(name, command) {
 	if (command.access == "all") {

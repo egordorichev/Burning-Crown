@@ -53,13 +53,13 @@ client.on('message', (message) => {
 	if (message.content.startsWith("!")) {
 		parseCommand(message)
 	} else {
-		let user = checkCreate(message.author)
+		let user = globals.checkCreate(message.author)
 		user.cnt += 1
 
 		if (user.cnt % 10 == 0) {
 			user.coins += 1
 			// message.react(coin)
-			saveDb()
+			globals.saveDb()
 		}
 	}
 })
