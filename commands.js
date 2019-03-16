@@ -224,9 +224,29 @@ exports.commands =  {
 
 			let [info, enemy] = getBattleInfo(message)
 
-			let damage = Math.floor(Math.random() * 5 + 5)
+			let damage = Math.floor(Math.random() * 5 + 1)
       hit(enemy, info, damage, message)
       takeTurn(message)
+			globals.saveDb()
+		}
+	},
+
+	defend : {
+		access : "all",
+		description : "Blocks damage from your opponent",
+		battle : true,
+		run : (args, message) => {
+			if (!checkTurn(message)) {
+				return
+			}
+
+			let [info, enemy] = getBattleInfo(message)
+
+			info.block = true
+			info.bchance = Math.floor(Math.random() * 100)
+
+			message.channel.send(`${message.author} puts his :shield: up!`)
+			takeTurn(message)
 			globals.saveDb()
 		}
 	},
@@ -386,8 +406,10 @@ exports.commands =  {
 
       message.channel.send(`<@${info.id}> uses ${name}!`)
 
-      item.use(info, enemy, message)
-      takeTurn(message)
+      if (!item.use(info, enemy, message)) {
+				takeTurn(message)
+			}
+
       globals.saveDb()
     }
   },
@@ -501,6 +523,15 @@ function checkDead(info, enemy, message) {
 }
 
 function hit(enemy, info, damage, message) {
+	if (enemy.block) {
+		enemy.block = false
+
+		if (enemy.bchance > 50) {
+			message.channel.send(`<@${info.id}> hits <@${enemy.id}> for ${damage} :hearts:, but <@${enemy.id}> blocks it! :shield:`)
+			return
+		}
+	}
+
   enemy.hp -= damage
 
   if (enemy.hp <= 0) {

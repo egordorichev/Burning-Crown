@@ -12,14 +12,23 @@ client.on('ready', () => {
   console.log("Connected as " + client.user.tag)
 })
 
+const jokes = [ "It's nice to have you :)", "Get comfy!", "Fill up your cup with tea, and have fun!",
+ 	"Don't forget to have fun!", "We are happy, that you are with us now :)", "Have a rest!", "Thanks for hopping onto the server :)",
+  "What a pleasure!", "Please leave all weapons near the door! Have fun :)", ":DDD", ":))" ]
+
+client.on('guildMemberAdd', member => {
+	let str = jokes[Math.floor(Math.random() * jokes.length)];
+	member.guild.channels.get('440553300203667479').send(`Welcome, <@${member.user.id}>!\n${str}`);
+});
+
 client.on('messageReactionAdd', (reaction, user) => {
 	if (user != client.user && reaction._emoji.name === "coin") {
-		let self = checkCreate(user)
-		let who = checkCreate(reaction.message.author)
+		let self = globals.checkCreate(user)
+		let who = globals.checkCreate(reaction.message.author)
 
 		if (self != who) {
 			if (user != conf.owner && self.coins == 0) {
-				reaction.message.channel.send(`<@${self.id}>, you have 0 ${coin}, you can't give them to other! :(`)
+				reaction.message.channel.send(`<@${self.id}>, you have 0 ${globals.coin}, you can't give them to other! :(`)
 				reaction.remove(user)
 			} else {
 				if (user != conf.owner) {
